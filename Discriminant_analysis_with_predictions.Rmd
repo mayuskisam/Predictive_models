@@ -1,0 +1,354 @@
+---
+title: "Discriminant Analysis and Logistic Regression"
+author: "Sam Mayuski"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 2
+```{r}
+library(MASS)
+data1 = read.csv("~/Problem2.csv")
+
+#logistic regression linear
+log1 = glm(Y ~ X1 + X2, data = data1, family = binomial)
+
+#logistic regression with linear and squared terms
+log2 = glm(Y ~ X1 + X2 + I(X1 ^ 2) + I(X2 ^ 2), data = data1, family = binomial)
+
+#LDA
+ldaModel = lda(Y ~ X1 + X2, data = data1)
+
+#QDA
+qdaModel = qda(Y ~ X1 + X2, data = data1)
+```
+
+
+**part i** 
+```{r}
+par(mfrow = c(2, 2), mar = c(2, 2, 2, 2))
+set.seed(4241)
+
+gridX1 = seq(-3, 3, length.out = 60)
+gridX2 = seq(-3, 3, length.out = 60)
+gridX = expand.grid(gridX1, gridX2)
+names(gridX) = c("X1", "X2")
+
+#predicting using logistic linear model
+newPrediction1 = predict(log1, newdata = gridX, type = "response")
+newPrediction2 = predict(log2, newdata = gridX, type = "response")
+newPrediction3 = predict(ldaModel, newdata = gridX, type = "response")
+newPrediction4 = predict(qdaModel, newdata = gridX, type = "response")
+
+colors1 = ifelse(newPrediction1 < 0.5, "green", "blue")
+colors2 = ifelse(newPrediction2 < 0.5, "green", "blue")
+colors3 = ifelse(newPrediction3$class == 0, "green", "blue")
+colors4 = ifelse(newPrediction4$class == 0, "green", "blue")
+
+plot(gridX$X1, gridX$X2, col = colors1, pch = 16, main = "Logistic Regression (Linear Terms)")
+plot(gridX$X1, gridX$X2, col = colors2, pch = 16, main = "Logistic Regression (With Squared Terms)")
+plot(gridX$X1, gridX$X2, col = colors3, pch = 16, main = "LDA")
+plot(gridX$X1, gridX$X2, col = colors4, pch = 16, main = "QDA")
+```
+
+
+
+**part iii**
+```{r}
+#loading the test data
+testData = read.csv("~/STA4241/Problem2test.csv")
+testX = data.frame(cbind(testData$X1, testData$X2))
+
+#predicting values for each type of model
+log1Pred = ifelse(predict(log1, newdata = testX, type = "response") > 0.5, 1, 0)
+log2Pred = ifelse(predict(log2, newdata = testX, type = "response") > 0.5, 1, 0)
+ldaPred = predict(ldaModel, newdata = testX, type = "response")
+qdaPred = predict(qdaModel, newdata = testX, type = "response")
+
+#finding error rates
+(log1Error = mean(log1Pred != testData$Y))
+(log2Error = mean(log2Pred != testData$Y))
+(ldaError = mean(ldaPred$class != testData$Y))
+(qdaError = mean(qdaPred$class != testData$Y))
+```
+
+It appears that all models do significantly better than chance, with logistic regression with linear terms and LDA performing the best.
+
+
+## Question 3
+
+```{r}
+data3 = read.csv("~/STA4241/Problem3.csv")
+
+ldaModel3 = lda(Y ~ X1 + X2, data = data3)
+qdaModel3 = qda(Y ~ X1 + X2, data = data3)
+```
+
+
+**part i**
+```{r}
+par(mfrow = c(1, 2))
+set.seed(4241)
+
+gridX1 = seq(-3, 3, length.out = 60)
+gridX2 = seq(-3, 3, length.out = 60)
+gridX = expand.grid(gridX1, gridX2)
+names(gridX) = c("X1", "X2")
+
+#predicting using logistic linear model
+newPred1 = predict(ldaModel3, newdata = gridX, type = "response")
+newPred2 = predict(qdaModel3, newdata = gridX, type = "response")
+
+colorNames = c("green", "blue", "red", "black")
+names(colorNames) = c(0, 1, 2, 3)
+colors1 = colorNames[newPred1$class]
+colors2 = colorNames[newPred2$class]
+
+plot(gridX$X1, gridX$X2, col = colors1, pch = 16, main = "LDA", xlab = "X1", ylab = "X2")
+plot(gridX$X1, gridX$X2, col = colors2, pch = 16, main = "QDA", xlab = "X1", ylab = "X2")
+```
+
+
+**part ii**
+```{r}
+testData3 = read.csv("~/STA4241/Problem3test.csv")
+testX3 = data.frame(cbind(testData3$X1, testData3$X2))
+
+ldaPred3 = predict(ldaModel3, newdata = testX3, type = "response")
+qdaPred3 = predict(qdaModel3, newdata = testX3, type = "response")
+
+(ldaError3 = mean(ldaPred3$class != testData3$Y))
+(qdaError3 = mean(qdaPred3$class != testData3$Y))
+```
+
+
+**part iv**
+The QDA model is an improvement on random guessing considering the ~59% error rate in context of the chance of choosing incorrectly by randomly guessing, which is now 75% with our four output classes. The probability of randomly selecting a correct outcome from four categories is 25%, and 1 - 0.25 = 75%, which is the expected error rate from guessing alone.
+
+
+## Question 4
+
+```{r}
+set.seed(4241)
+library(MASS)
+
+n = 1000
+numSamples = 1000
+
+ldaModels = vector("list", length = n)
+ldaErrors = rep(-1, times = n)
+qdaModels = vector("list", length = n)
+qdaErrors = rep(-1, times = n)
+
+for (i in 1:n) {
+  #generating random normal sample
+  x1 = rnorm(numSamples)
+  x2 = rnorm(numSamples)
+  y = as.numeric(x1 ^ 2 + x2 ^ 2 > 1)
+  train = data.frame(X1 = x1, X2 = x2, Y = y)
+  
+  #fitting models based on first set of data points (training set)
+  ldaModels[[i]] = lda(Y ~ X1 + X2, data = train)
+  qdaModels[[i]] = qda(Y ~ X1 + X2, data = train)
+  
+  #generating testing data
+  testx1 = rnorm(numSamples)
+  testx2 = rnorm(numSamples)
+  testY = as.numeric(testx1 ^ 2 + testx2 ^ 2 > 1)
+  test = data.frame(X1 = testx1, X2 = testx2)
+  
+  #getting testing set errors on last 500 data points (testing set)
+  ldaPrediction = predict(ldaModels[[i]], newdata = test)
+  qdaPrediction = predict(qdaModels[[i]], newdata = test)
+  
+  #getting testing data error rates
+  ldaErrors[i] = mean(ldaPrediction$class != testY)
+  qdaErrors[i] = mean(qdaPrediction$class != testY)
+}
+```
+
+
+**part ii**
+QDA will outperform LDA in this scenario as a result of the quadratic decision boundary. Later we will see another scenario where QDA outperforms LDA due to non-constant variances in the classes.
+
+**part iii**
+```{r}
+hist1 = hist(ldaErrors, breaks = "Scott", main = "LDA Error Rates", xlab = "Error")
+hist2 = hist(qdaErrors, breaks = "Scott", main = "QDA Error Rates", xlab = "Error")
+
+mean(ldaErrors)
+mean(qdaErrors)
+```
+
+
+**part iv**
+```{r}
+set.seed(4241)
+n = 1000
+samples = c(100, 200, 300, 500, 700, 1000, 1500)
+plotErrorsLDA = c()
+plotErrorsQDA = c()
+
+for (j in 1:length(samples)) {
+  numSamples = samples[j]
+  ldaModels = vector("list", length = n)
+  ldaErrors = rep(-1, times = n)
+  qdaModels = vector("list", length = n)
+  qdaErrors = rep(-1, times = n)
+
+  for (i in 1:n) {
+    #generating random normal sample
+    x1 = rnorm(numSamples)
+    x2 = rnorm(numSamples)
+  
+    #assigning values for x1, x2, and y for this sample
+    y = as.numeric(x1 ^ 2 + x2 ^ 2 > 1)
+    train = data.frame(X1 = x1, X2 = x2, Y = y)
+
+    #fitting models based on first half of data points (training set)
+    ldaModels[[i]] = lda(Y ~ X1 + X2, data = train)
+    qdaModels[[i]] = qda(Y ~ X1 + X2, data = train)
+  
+    testx1 = rnorm(numSamples)
+    testx2 = rnorm(numSamples)
+    testY = as.numeric(testx1 ^ 2 + testx2 ^ 2 > 1)
+    test = data.frame(X1 = testx1, X2 = testx2)
+  
+    #getting testing set errors on last 500 data points (testing set)
+    ldaPrediction = predict(ldaModels[[i]], newdata = test)
+    qdaPrediction = predict(qdaModels[[i]], newdata = test)
+
+    #getting testing data error rates
+    ldaErrors[i] = mean(ldaPrediction$class != testY)
+    qdaErrors[i] = mean(qdaPrediction$class != testY)
+  }
+  plotErrorsLDA = c(plotErrorsLDA, ldaErrors[i])
+  plotErrorsQDA = c(plotErrorsQDA, qdaErrors[i])
+}
+
+plot(samples, plotErrorsLDA, type = "b", pch = 16, lwd = 2.5, col = "red", ylim = c(min(plotErrorsQDA), max(plotErrorsLDA)), main = "Mean Error of LDA vs. QDA Over 1000 Simulations of n Samples", xlab = "# Samples", ylab = "Mean Error")
+lines(samples, plotErrorsQDA, type = "b", pch = 16, lwd = 2.5, col = "blue")
+legend("topright", legend = c("LDA", "QDA"), col = c("red", "blue"), lty = 1, cex = 0.9)
+
+plotErrorsLDA
+plotErrorsQDA
+```
+
+
+As we can see, the relative performance of LDA and QDA do depend on the sample size. As the number of samples increases, both QDA and LDA tend to perform better, and QDA increases its effectiveness over LDA.
+
+
+To show another less drastic example of QDA performing better than LDA, we can generate data that have differing variances among the classes using mvrnorm()
+
+```{r}
+set.seed(4241)
+library(MASS)
+
+n = 1000
+mid = n / 2
+x1 = matrix(rep(NA, times = n ^ 2), ncol = n)
+x2 = matrix(rep(NA, times = n ^ 2), ncol = n)
+y = matrix(rep(NA, times = n ^ 2), ncol = n)
+
+ldaModels = vector("list", length = n)
+ldaErrors = rep(-1, times = n)
+qdaModels = vector("list", length = n)
+qdaErrors = rep(-1, times = n)
+
+cov1 = matrix(c(1, 0.1, 0.1, 1), ncol = 2)
+cov2 = matrix(c(1, -0.1, -0.1, 1), ncol = 2)
+
+for (i in 1:n) {
+  #generating multivariate random normal samples
+  sample1 = mvrnorm(n, c(0, 0), cov1)
+  sample2 = mvrnorm(n, c(0, 0), cov2)
+
+  combined = rbind(sample1, sample2)
+  sampleRand = combined[sample(1:nrow(combined))]
+  
+  x1[, i] = sampleRand[1:n]
+  x2[, i] = sampleRand[(n + 1):length(sampleRand)]
+  y[, i] = as.numeric(x2[, i] > x1[, i] ^ 2)
+
+  #fitting models based on first 500 data points (training set)
+  ldaModels[[i]] = lda(y[1:mid, i] ~ x1[1:mid, i] + x2[1:mid, i])
+  qdaModels[[i]] = qda(y[1:mid, i] ~ x1[1:mid, i] + x2[1:mid, i])
+  
+  #getting testing set errors on last 500 data points (testing set)
+  ldaPrediction = predict(ldaModels[[i]], newdata = data.frame(x1[(mid + 1):n, i], x2[(mid + 1):n, i]), type = "response")
+  qdaPrediction = predict(qdaModels[[i]], newdata = data.frame(x1[(mid + 1):n, i], x2[(mid + 1):n, i]), type = "response")
+  
+  #getting testing data error rates
+  ldaErrors[i] = mean(ldaPrediction$class != y[(mid + 1):n, i])
+  qdaErrors[i] = mean(qdaPrediction$class != y[(mid + 1):n, i])
+}
+
+hist1 = hist(ldaErrors, breaks = "Scott", main = "LDA Error Rates", xlab = "Error")
+hist2 = hist(qdaErrors, breaks = "Scott", main = "QDA Error Rates", xlab = "Error")
+mean(ldaErrors)
+mean(qdaErrors)
+```
+
+
+```{r}
+set.seed(4241)
+nVals = c(100, 200, 300, 500, 700, 1000, 1500)
+plotErrorsLDA = c()
+plotErrorsQDA = c()
+
+for (j in 1:length(nVals)) {
+  n = nVals[j]
+  mid = n / 2
+  x1 = matrix(rep(NA, times = n ^ 2), ncol = n)
+  x2 = matrix(rep(NA, times = n ^ 2), ncol = n)
+  y = matrix(rep(NA, times = n ^ 2), ncol = n)
+
+  ldaModels = vector("list", length = n)
+  ldaErrors = rep(-1, times = n)
+  qdaModels = vector("list", length = n)
+  qdaErrors = rep(-1, times = n)
+
+  cov1 = matrix(c(1, 0.1, 0.1, 1), ncol = 2)
+  cov2 = matrix(c(1, -0.1, -0.1, 1), ncol = 2)
+
+  for (i in 1:n) {
+    #generating multivariate random normal samples
+    sample1 = mvrnorm(n, c(0, 0), cov1)
+    sample2 = mvrnorm(n, c(0, 0), cov2)
+
+    combined = rbind(sample1, sample2)
+    sampleRand = combined[sample(1:nrow(combined))]
+  
+    x1[, i] = sampleRand[1:n]
+    x2[, i] = sampleRand[(n + 1):length(sampleRand)]
+    y[, i] = as.numeric(x2[, i] > x1[, i] ^ 2)
+
+    #fitting models based on first 500 data points (training set)
+    ldaModels[[i]] = lda(y[1:mid, i] ~ x1[1:mid, i] + x2[1:mid, i])
+    qdaModels[[i]] = qda(y[1:mid, i] ~ x1[1:mid, i] + x2[1:mid, i])
+  
+    #getting testing set errors on last 500 data points (testing set)
+    ldaPrediction = predict(ldaModels[[i]], newdata = data.frame(x1[(mid + 1):n, i], x2[(mid + 1):n, i]), type = "response")
+    qdaPrediction = predict(qdaModels[[i]], newdata = data.frame(x1[(mid + 1):n, i], x2[(mid + 1):n, i]), type = "response")
+  
+    #getting testing data error rates
+    ldaErrors[i] = mean(ldaPrediction$class != y[(mid + 1):n, i])
+    qdaErrors[i] = mean(qdaPrediction$class != y[(mid + 1):n, i])
+  }
+  plotErrorsLDA = c(plotErrorsLDA, mean(ldaErrors))
+  plotErrorsQDA = c(plotErrorsQDA, mean(qdaErrors))
+}
+
+plot(nVals, plotErrorsLDA, pch = 16, col = "red", xlab = "Sample Size", ylab = "Average Error", main = "LDA Error Performance with Varying Sample Sizes", ylim = c(min(plotErrorsQDA), max(plotErrorsLDA)))
+lines(nVals, plotErrorsLDA, col = "black", type = "l")
+
+plot(nVals, plotErrorsQDA, pch = 16, col = "red", xlab = "Sample Size", ylab = "Average Error", main = "QDA Error Performance with Varying Sample Sizes")
+lines(nVals, plotErrorsQDA, col = "black", type = "l")
+
+plotErrorsLDA
+plotErrorsQDA
+```
