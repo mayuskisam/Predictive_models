@@ -1,0 +1,290 @@
+---
+title: "SVMs and Bootstrap Resampling with CIs"
+author: "Sam Mayuski"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+
+**part i**
+```{r}
+library(e1071)
+library(class)
+library(MASS)
+library(caret)
+
+set.seed(4241)
+crabData = read.csv("~/STA4241/Crabs.csv")
+
+#division for training/testing data (~60% will be training data)
+indices = sample(nrow(crabData), floor(nrow(crabData) * 0.6))
+
+train = crabData[indices,]
+test = crabData[-indices,]
+
+gammas = c(0.0001, 0.001, 0.01, 0.1, 1, 10, 100)
+models = ldaModels = vector("list", length = length(gammas))
+testErrors = rep(-1, times = length(gammas))
+trainErrors = rep(-1, times = length(gammas))
+
+for (i in 1:length(gammas)) {
+  models[[i]] = svm(y ~ ., gamma = gammas[i], kernel = "radial", data = train, cost = 1)
+  
+  predTrain = predict(models[[i]], train, type = "response")
+  predTest = predict(models[[i]], test, type = "response")
+  
+  resultsTrain = ifelse(predTrain > 0.5, 1, 0)
+  resultsTest = ifelse(predTest > 0.5, 1, 0)
+  
+  trainErrors[i] = mean(resultsTrain != train$y)
+  testErrors[i] = mean(resultsTest != test$y)
+}
+
+cbind(gammas, trainErrors, testErrors)
+```
+
+As we can see by the training error going down as the testing error increases, the models start to become overfit as the value of the gamma tuning parameter increases past 0.1.
+
+**part ii**
+```{r}
+set.seed(4241)
+x = crabData[, 2:ncol(crabData)]
+y = crabData$y
+k = 10
+
+kValues = seq(1, 17, by = 1)
+errors = matrix(rep(NA, times = length(kValues) * k), ncol = length(kValues))
+meanErrors = rep(-1, times = length(kValues))
+groups = cut(1:nrow(x), breaks = 10, labels = FALSE)
+
+for (i in 1:length(kValues)) {
+  for (j in 1:k) {
+    indices = which(groups == j)
+
+    xTrain = x[indices,]
+    yTrain = y[indices]
+    
+    xTest = x[-indices,]
+    yTest = y[-indices]
+    
+    modelJ = knn(xTrain, xTest, cl = yTrain, k = kValues[i])
+    errors[j, i] = mean(modelJ != yTest)
+  }
+  meanErrors[i] = mean(errors[, i])
+}
+
+results = cbind(kValues, meanErrors)
+colnames(results) = c("k", "Avg Error")
+results
+```
+
+
+Based on this table, I think the optimal value of k is 9, as this value leads to the lowest error while still being reasonable in terms of the sample size.
+
+
+**part iii**
+```{r}
+set.seed(4241)
+errors = matrix(rep(NA, times = 600), ncol = 6) #6 methods with 100 rows of errors each
+
+for (i in 1:100) {
+  #select 25 training indices and make the rest part of the test set 
+  trainIndices = sample(1:nrow(crabData), size = 25, replace = FALSE)
+  trainData = crabData[indices,]
+  testRows = setdiff(1:nrow(crabData), trainIndices)
+  testData = crabData[testRows,]
+  
+  #fit logistic regression model and calculate error rate
+  logRegression = glm(y ~ ., data = trainData, family = binomial)
+  logPred = ifelse(predict(logRegression, newdata = testData[, -1], type = "response") > 0.5, 1, 0)
+
+  errors[i, 1] = mean(logPred != testData[, 1])
+  
+  #LDA and QDA
+  ldaModel = lda(y ~ ., data = trainData)
+  qdaModel = qda(y ~ ., data = trainData)
+
+  ldaPred = predict(ldaModel, newdata = testData[, -1], type = "response")
+  qdaPred = predict(qdaModel, newdata = testData[, -1], type = "response")
+  
+  errors[i, 2] = mean(ldaPred$class != testData[, 1])
+  errors[i, 3] = mean(qdaPred$class != testData[, 1])
+  
+  #KNN
+  trControl = trainControl(method = "cv", number = 5) #5 fold cross validation
+  cvModel = train(as.factor(y) ~ ., method = "knn", trControl = trControl, metric = "Accuracy", tuneGrid = expand.grid(k = 1:5), data = trainData) #max value of k: 25/5 = 5
+  
+  knnModel = knn(trainData[, -1], testData[, -1], cl = trainData[, 1], k = cvModel$bestTune$k)
+  errors[i, 4] = mean(knnModel != testData[, 1])
+  
+  #SVM (radial kernel)
+  svmRadial = tune(svm, y ~ ., data = trainData, kernel = "radial", ranges = list(cost = c(0.01, 1, 5, 10, 100), gamma = c(0.001, 0.01, 0.1, 1)))
+  fitCV = svmRadial$best.model
+  
+  svmRPred = ifelse(predict(fitCV, testData[, -1], type = "response") > 0.5, 1, 0)
+  errors[i, 5] = mean(svmRPred != testData[, 1])
+  
+  #SVM (polynomial kernel)
+  svmPoly = tune(svm, y ~ ., data = trainData, kernel = "polynomial", ranges = list(cost = c(0.01, 1, 5, 10, 100), degree = c(1, 2, 3, 4, 5)))
+  fitCV1 = svmPoly$best.model
+  
+  svmPPred = ifelse(predict(fitCV1, testData[, -1], type = "response") > 0.5, 1, 0)
+  errors[i, 6] = mean(svmPPred != testData[, 1])
+  
+}
+```
+
+**part iii (a)**
+```{r}
+methods = c("Logistic Regression", "LDA", "QDA", "KNN", "SVM (radial)", "SVM (polynomial)")
+means = round(apply(errors, 2, mean), 5)
+cbind(methods, means)
+```
+
+
+**part iii (b)**
+```{r, fig.width = 10}
+boxplot(errors, names = methods, main = "Test Errors Across 100 Simulations", ylab = "Test Error")
+```
+
+
+While KNN appears to have the lowest median error rate, it also has a much higher level of variability than the other methods. SVM with the radial kernel appears to be the best choice for predicting the outcomes of this data.
+
+## Question 2
+
+**part i**
+```{r}
+#formula: x = bp + a(1 - p)
+(qtTrue = 10 * 0.6 + 0 * (1 - 0.6))
+```
+
+
+**part ii**
+```{r}
+#good estimator of true quantile value for given X_i is sample quantile value
+set.seed(4241)
+data = runif(100, 0, 10)
+(qtEst = quantile(data, probs = 0.6))
+
+#or it can be estimated using order statistics on ordered data
+sortData = sort(data)
+(qtEst1 = sortData[length(sortData) * 0.6])
+```
+
+
+**part iii**
+```{r}
+set.seed(4241)
+estimates = rep(NA, times = 1000)
+
+for (i in 1:1000) {
+  sample = sample(1:100, size = 100, replace = TRUE)
+  xBoot = data[sample]
+  estimates[i] = quantile(xBoot, probs = 0.6)
+}
+
+hist(estimates, breaks = "Scott", main = "Confidence Interval for 0.6 Quantile", xlab = "Estimate of 0.6 Quantile")
+lower = round(quantile(estimates, 0.025), 5)
+upper = round(quantile(estimates, (1 - 0.025)), 5)
+abline(v = lower, col = "red")
+abline(v = upper, col = "red")
+
+(confInt = paste0("95% CI: [", lower, ", ", upper, "]"))
+```
+
+
+**part iv**
+```{r}
+set.seed(4241)
+sampleSize = 100
+numSamples = 1000
+
+#each of 100 sample columns contains 1000 uniform values
+unifData = matrix(runif(numSamples * sampleSize, 0, 10), ncol = numSamples)
+
+
+bootResults = 0
+regResults = 0
+
+for (i in 1:numSamples) {
+  bootEst = rep(NA, times = 1000)
+
+  for (j in 1:1000) {
+    sample = sample(1:sampleSize, sampleSize, replace = TRUE)
+    xBoot = unifData[sample, j]
+    bootEst[j] = quantile(xBoot, probs = 0.6)
+  }
+  
+  qtTrue = quantile(unifData[, i], probs = 0.6)
+  
+  bootLower = quantile(bootEst, (0.05 / 2))
+  bootUpper = quantile(bootEst, (1 - (0.05 / 2)))
+  
+  seEst = sqrt((1 / (numSamples - 1)) * sum((bootEst - ((1 / numSamples) * sum(bootEst))) ^ 2))
+  #seEst = sd(bootEst)
+  
+  regLower = mean(bootEst) - (qnorm(1 - (0.05 / 2)) * seEst)
+  regUpper = mean(bootEst) + (qnorm(1 - (0.05 / 2)) * seEst)
+  if (bootLower <= qtTrue & bootUpper >= qtTrue) {
+    bootResults = bootResults + 1
+  }
+  if (regLower <= qtTrue & regUpper >= qtTrue) {
+    regResults = regResults + 1
+  }
+}
+
+paste0("Bootstrap coverage percentage: ", (bootResults / numSamples))
+paste0("Standard interval coverage percentage: ", (regResults / numSamples))
+```
+
+
+**part v**
+```{r}
+set.seed(4241)
+sampleSize = 100
+numSamples = 1000
+
+#each of 100 sample columns contains 1000 uniform values
+unifData = matrix(runif(numSamples * sampleSize, 0, 10), ncol = numSamples)
+
+bootResults = 0
+regResults = 0
+
+for (i in 1:numSamples) {
+  bootEst = rep(NA, times = 1000)
+
+  for (j in 1:1000) {
+    sample = sample(1:sampleSize, sampleSize, replace = TRUE)
+    xBoot = unifData[sample, j]
+    bootEst[j] = quantile(xBoot, probs = 0.99)
+  }
+  
+  qtTrue = quantile(unifData[, i], probs = 0.99)
+  
+  bootLower = quantile(bootEst, (0.01 / 2))
+  bootUpper = quantile(bootEst, (1 - (0.01 / 2)))
+  
+  seEst = sqrt((1 / (numSamples - 1)) * sum((bootEst - ((1 / numSamples) * sum(bootEst))) ^ 2))
+  #seEst = sd(bootEst)
+  
+  regLower = mean(bootEst) - (qnorm(1 - (0.01 / 2)) * seEst)
+  regUpper = mean(bootEst) + (qnorm(1 - (0.01 / 2)) * seEst)
+  
+  if (bootLower <= qtTrue & bootUpper >= qtTrue) {
+    bootResults = bootResults + 1
+  }
+  if (regLower <= qtTrue & regUpper >= qtTrue) {
+    regResults = regResults + 1
+  }
+}
+
+paste0("Bootstrap coverage percentage: ", (bootResults / numSamples))
+paste0("Standard interval coverage percentage: ", (regResults / numSamples))
+```
+
+As we increase the value from 0.6 to 0.99, the bootstrap intervals contain the true value an increasing number of times while the performance of the standard intervals stays constant. I think there are differences because the bootstrap's percentile method will result in a wider interval as we increase the value of the desired quantile, while the standard interval remains the same.
